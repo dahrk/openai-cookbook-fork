@@ -34,7 +34,7 @@ Missing form choices default to human review. Manual dispatch accepts `issue_num
 4. Reconcile existing open, closed, and merged PRs using stable per-group branch names. Reuse any prior PR. Closed unmerged PRs require manual intervention rather than automatic reopening.
 5. Attempt at most one new fix per run by default. The fix agent can propose a complete replacement for an explicitly allowlisted Markdown file. It can decline when evidence is insufficient. Changes pass path, symlink, size, nonempty-content and whitespace checks, then open as **draft PRs**. No automatic merging, repository script execution, or arbitrary code editing. Repository CI and human review remain required.
 6. Once a PR is ready for review, tag configured owners if the current head commit has waited 48 hours without a human review. Reviews of old commits, pending reviews, bot reviews and ordinary issue comments do not satisfy review. One reminder per head SHA survives retries through a hidden GitHub comment marker.
-7. Persist groups and PR history on an `issue-pilot-state` branch, even after partial failures. Workflow concurrency serializes runs. Stable branches recover a crash after branch creation; existing PRs recover a crash after PR creation. The state branch is the authoritative long-term grouping memory; keep it backed up. Remote PR reconciliation recovers actions for known group IDs, not arbitrary lost semantic history.
+7. Persist groups and PR history on `issue-pilot-state-<issue_number>`, even after partial failures. Runs for one issue serialize; different issues use independent state branches and can run concurrently without replacing one another in a shared pending slot. Stable branches recover a crash after branch creation; existing PRs recover a crash after PR creation. The state branch is the authoritative long-term grouping memory; keep it backed up. Remote PR reconciliation recovers actions for known group IDs, not arbitrary lost semantic history.
 
 Owner routing is explicit in `config.json` using path globs, including a fallback. Replace demo handles with real GitHub users or teams. This implementation does not parse CODEOWNERS automatically. Draft PRs do not receive stale-review reminders until made ready for review.
 
@@ -52,7 +52,7 @@ Setup installs this worker under `cookbook/tools/issue-pilot` and the workflow u
 
 Configure these fork secrets through GitHub's secure UI or authenticated CLI:
 
-- `OPENAI_API_KEY`: required only in live mode.
+- `OPENAI_API_KEY`: required only for the implementation route.
 - `PILOT_SITE_BEARER`: service credential for the published owner-private Site, required when connecting telemetry.
 
 The workflow pins `PILOT_BACKEND=codex` and `OPENAI_MODEL=gpt-6-luna`; another model is rejected without fallback. Codex CLI is pinned to `0.166.0`. The Site origin is the existing published private Site, and the target is `github.repository`. The workflow uses its own `GITHUB_TOKEN` with contents/issues/pull-request write permissions; no separate GitHub token secret is needed. GitHub repository policy must allow Actions to create pull requests. Credentials are scoped to the steps that need them. The Codex child process receives only its API credential, runs from an isolated temporary directory, and has shell, browser, plugin, and subagent tools disabled. Python retains responsibility for allowlisted draft-PR writes.
@@ -78,7 +78,7 @@ Local live execution requires `npm install -g @openai/codex@0.166.0`, the teleme
 .venv/bin/python pilot.py live --repo dahrk/openai-cookbook-fork --issue-number YOUR_ISSUE_NUMBER --disposition implement
 ```
 
-Serialize live local runs yourself; do not run a local writer alongside the workflow. Scheduled runs persist authoritative grouping memory on `issue-pilot-state`. The live worker refuses writes to `openai/openai-cookbook`. The learning phase remembers groups, PRs and review outcomes; this demo does not train models or modify its own implementation.
+Serialize live local runs yourself; do not run a local writer alongside the workflow. Issue-triggered runs persist authoritative memory on their per-issue state branch. The live worker refuses writes to `openai/openai-cookbook`. The learning phase remembers groups, PRs and review outcomes; this demo does not train models or modify its own implementation.
 
 ## Files and verification
 
@@ -92,3 +92,5 @@ Serialize live local runs yourself; do not run a local writer alongside the work
 - `docs/PROVENANCE.md`: real Cookbook snapshot provenance and validation scope.
 
 The replay and tests require no API keys. Live semantic quality, model access, GitHub permissions and hosted scheduling require an authenticated integration run. Demo reports use explicit scenario labels; they do not measure the live classifier's accuracy. Issue descriptions are untrusted model input and truncated to 12,000 characters; the fix agent has no tools or secrets in its input. The repository checkout is read as data and no repository-provided code is executed.
+
+The demo uses `ubuntu-slim` (one CPU, 5 GB RAM), a ten-minute timeout, a sparse checkout of the worker, and three-day artifact retention. Human-review and won't-implement routes skip Node/Codex installation and do not receive the API key.
