@@ -1,5 +1,7 @@
 import base64
+from contextlib import redirect_stdout
 from copy import deepcopy
+import io
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -38,10 +40,11 @@ class API:
 class ReviewTests(unittest.TestCase):
     def run_review(self,api,result=RESULT):
         with tempfile.TemporaryDirectory() as directory:
-            args=SimpleNamespace(output=directory,telemetry=SimpleNamespace(boundary=lambda *a:None))
+            args=SimpleNamespace(output=directory,telemetry=SimpleNamespace(boundary=lambda *a:None,checkpoint=lambda:None))
             with patch('pilot.CodexBrain') as brain, patch('pilot.terminal_outcome') as terminal:
                 brain.return_value.review.return_value=deepcopy(result)
-                pilot.review_pull_request(args,api,ISSUE)
+                with redirect_stdout(io.StringIO()):
+                    pilot.review_pull_request(args,api,ISSUE)
                 report=Path(directory,'review.json').read_text()
                 return brain,terminal,report
     def test_focused_review_publishes_comment_at_exact_head_then_stops_for_human(self):
@@ -88,5 +91,14 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(pilot.review_request(ISSUE)[0],5)
         for body in ('', '### Pull request number\n\nhttps://outside.test/5', '### Pull request number\n\n0'):
             with self.assertRaises(ValueError):pilot.review_request({'body':body})
+    def test_cancel_after_inference_prevents_publishing_the_review(self):
+        api=API()
+        with tempfile.TemporaryDirectory() as directory:
+            def cancel():raise pilot.Cancelled()
+            args=SimpleNamespace(output=directory,telemetry=SimpleNamespace(boundary=lambda *a:None,checkpoint=cancel))
+            with patch('pilot.CodexBrain') as brain,self.assertRaises(pilot.Cancelled):
+                brain.return_value.review.return_value=deepcopy(RESULT)
+                pilot.review_pull_request(args,api,ISSUE)
+        self.assertEqual(api.posts,[])
 
 if __name__=='__main__':unittest.main()

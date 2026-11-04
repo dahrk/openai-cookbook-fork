@@ -131,6 +131,7 @@ def review_pull_request(args, api, issue):
                 or not isinstance(finding['message'], str) or not finding['message'].strip()):
             raise ValueError('Invalid or out-of-scope review finding')
     # Recheck the source immediately before publication. Never review a newer head by accident.
+    args.telemetry.checkpoint()
     current = api.call(f'/pulls/{number}')
     if current['state'] != 'open' or current['head']['sha'] != head:
         raise RuntimeError('Pull request changed during review; refusing a stale review')
@@ -141,11 +142,14 @@ def review_pull_request(args, api, issue):
                for item in result['findings']]
     if not result['findings']:
         report.append('No concrete findings in this focused review.')
-    report += ['Validation limits: ' + safe(result['limitations']),
+    report += ['Validation performed: static review of the supplied README base, head and patch. '
+               'This worker ran no code, link requests or PR CI.',
+               'Reviewer notes: ' + safe(result['limitations']),
                'Advisory comment review only. A human decides approval and merging.', marker]
     body = '\n\n'.join(report)
     if len(body) > 20000:
         raise ValueError('Review report exceeds the demo size limit')
+    args.telemetry.checkpoint()
     published = api.call(f'/pulls/{number}/reviews', {'commit_id': head, 'event': 'COMMENT', 'body': body})
     atomic_json(output, {**result, 'pr_number': number, 'head_sha': head, 'focus': focus,
                         'review_url': published['html_url'], 'recovered': False})
