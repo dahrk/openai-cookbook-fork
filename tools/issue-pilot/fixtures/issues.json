@@ -1,0 +1,9 @@
+[
+ {"number":101,"title":"Notebook fails to find input data from another directory","scenario_key":"relative-data-path","root_cause":"Notebook data paths depend on the working directory"},
+ {"number":102,"title":"FileNotFoundError when launching examples from Downloads","scenario_key":"relative-data-path","root_cause":"Notebook data paths depend on the working directory"},
+ {"number":103,"title":"Running notebook outside repo root cannot load CSV","scenario_key":"relative-data-path","root_cause":"Notebook data paths depend on the working directory"},
+ {"number":104,"title":"Relative data path fails in Jupyter started elsewhere","scenario_key":"relative-data-path","root_cause":"Notebook data paths depend on the working directory"},
+ {"number":105,"title":"Missing key setup instructions","scenario_key":"api-key-setup","root_cause":"API key setup instructions missing from a guide"},
+ {"number":106,"title":"Guide does not explain OPENAI_API_KEY","scenario_key":"api-key-setup","root_cause":"API key setup instructions missing from a guide"},
+ {"number":107,"title":"A link in the evaluation guide returns 404","scenario_key":"broken-eval-link","root_cause":"Evaluation guide references a removed resource"}
+]

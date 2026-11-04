@@ -1,0 +1,8 @@
+{
+  "repo": "dahrk/openai-cookbook-fork",
+  "min_reports": 2,
+  "stale_hours": 48,
+  "fix_paths": ["README.md"],
+  "owners": {"examples/*": ["@dahrk"], "README.md": ["@dahrk"]},
+  "fallback_owners": ["@dahrk"]
+}

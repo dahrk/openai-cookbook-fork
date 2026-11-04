@@ -1,0 +1,80 @@
+name: Scheduled Issue Pilot
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Credential-free replay or live fork intake
+        type: choice
+        options: [demo, live]
+        default: demo
+permissions:
+  contents: write
+concurrency:
+  group: issue-pilot
+  cancel-in-progress: false
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: tools/issue-pilot
+    env:
+      PILOT_MODE: ${{ inputs.mode || vars.PILOT_MODE || 'demo' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install optional socket transport
+        if: vars.PILOT_SITE_URL != ''
+        run: pip install -r requirements-telemetry.txt
+      - name: Install Agents SDK for live mode
+        if: env.PILOT_MODE == 'live'
+        run: pip install -r requirements.txt
+      - name: Verify worker policies
+        run: python -m unittest discover -s tests -v
+      - name: Restore persistent state
+        run: |
+          mkdir -p state
+          if git ls-remote --exit-code --heads origin issue-pilot-state; then
+            git fetch origin issue-pilot-state
+            git show FETCH_HEAD:state.json > state/state.json
+          fi
+      - name: Run intake and fixes
+        env:
+          GH_TOKEN: ${{ secrets.PILOT_GH_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TARGET_REPO: ${{ vars.TARGET_REPO || github.repository }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4.1' }}
+          PILOT_SITE_URL: ${{ vars.PILOT_SITE_URL }}
+          PILOT_SITE_BEARER: ${{ secrets.PILOT_SITE_BEARER }}
+        run: |
+          if [ "$PILOT_MODE" = live ]; then
+            python pilot.py live --repo "$TARGET_REPO"
+          else
+            python pilot.py demo --phase-delay 3
+          fi
+      - name: Save state even after partial failure
+        if: always()
+        run: |
+          if [ ! -f state/state.json ]; then exit 0; fi
+          git config user.name 'issue-pilot[bot]'
+          git config user.email 'issue-pilot@users.noreply.github.com'
+          state_blob=$(git hash-object -w state/state.json)
+          state_tree=$(printf '100644 blob %s\tstate.json\n' "$state_blob" | git mktree)
+          if git ls-remote --exit-code --heads origin issue-pilot-state; then
+            git fetch origin issue-pilot-state
+            parent=$(git rev-parse FETCH_HEAD)
+            commit=$(printf 'Persist issue groups and fix history\n' | git commit-tree "$state_tree" -p "$parent")
+          else
+            commit=$(printf 'Persist issue groups and fix history\n' | git commit-tree "$state_tree")
+          fi
+          git push origin "$commit:refs/heads/issue-pilot-state"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: issue-pilot-report
+          path: tools/issue-pilot/artifacts/
