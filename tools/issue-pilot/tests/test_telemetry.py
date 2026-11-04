@@ -51,3 +51,8 @@ class TelemetryTests(unittest.TestCase):
         with patch.dict(os.environ, {'PILOT_SITE_URL': 'http://example.com'}):
             with self.assertRaises(ValueError):
                 Telemetry('demo/cookbook', 'demo', self.temp.name)
+
+    def test_required_delivery_rejects_an_offline_only_run(self):
+        self.t.emit(detail='A real integration requires a remote receipt')
+        with self.assertRaisesRegex(RuntimeError, 'not configured'):
+            self.t.require_delivery(timeout=0)

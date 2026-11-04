@@ -93,6 +93,18 @@ class Telemetry:
         with self.lock:
             self.pending.append({'type': 'ack', 'run_id': self.run_id, 'command_id': command_id})
 
+    def require_delivery(self, timeout=30):
+        """Fail a connected integration run rather than silently keeping events local."""
+        if not self.thread:
+            raise RuntimeError('Required Site telemetry is not configured')
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            with self.lock:
+                if not self.pending:
+                    return
+            time.sleep(.05)
+        raise RuntimeError('Site did not acknowledge telemetry before the delivery deadline')
+
     def _network(self):
         delay = 1
         while not self.stop.is_set():

@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 import pilot
 
@@ -107,6 +109,35 @@ class PilotTests(unittest.TestCase):
                   'fallback_owners': ['@maintainer']}
         self.assertEqual(pilot.owner_mentions(config, ['examples/demo.ipynb']), '@alice')
         self.assertEqual(pilot.owner_mentions(config, ['other']), '@maintainer')
+
+    def test_live_batch_reads_upstream_and_keeps_target_and_source_in_state(self):
+        reads = []
+        fixtures = self.issues
+        class API:
+            def __init__(self, repo):
+                self.repo = repo
+            def issues(self):
+                reads.append(self.repo)
+                return fixtures
+            def find_pr(self, key):
+                self_repo = self.repo
+                self_outer.assertEqual(self_repo, 'dahrk/openai-cookbook-fork')
+                return None
+        self_outer = self
+        telemetry = SimpleNamespace(boundary=lambda *a: None, checkpoint=lambda: None)
+        with tempfile.TemporaryDirectory() as directory:
+            args = SimpleNamespace(repo='dahrk/openai-cookbook-fork',
+                source_repo='openai/openai-cookbook', issue_limit=2, max_fixes=0,
+                state=directory + '/state.json', output=directory + '/artifacts', telemetry=telemetry)
+            with patch('pilot.GitHub', API), patch('pilot.CodexBrain', pilot.MockBrain), \
+                 patch.dict('os.environ', {'OPENAI_MODEL': 'gpt-6-luna',
+                     'PILOT_BACKEND': 'codex', 'PILOT_REQUIRE_TELEMETRY': '0'}):
+                pilot.live(args)
+            state = json.loads(Path(args.state).read_text())
+        self.assertEqual(reads, ['openai/openai-cookbook'])
+        self.assertEqual(state['repo'], 'dahrk/openai-cookbook-fork')
+        self.assertEqual(state['source_repo'], 'openai/openai-cookbook')
+        self.assertEqual(sum(len(group['reports']) for group in state['groups'].values()), 2)
 
 if __name__ == '__main__':
     unittest.main()

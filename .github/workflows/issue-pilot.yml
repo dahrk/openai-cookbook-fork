@@ -1,16 +1,25 @@
 name: Scheduled Issue Pilot
+run-name: Issue Pilot · ${{ inputs.mode || 'demo' }} · GPT-6 Luna
 on:
   schedule:
     - cron: '0 * * * *'
   workflow_dispatch:
     inputs:
       mode:
-        description: Credential-free replay or live fork intake
+        description: Credential-free replay or live Luna run
         type: choice
         options: [demo, live]
         default: demo
+      source_repo:
+        description: Read-only issue source; proposals always target this fork
+        type: string
+        default: openai/openai-cookbook
+      issue_limit:
+        description: Maximum reports for this explicit intake batch (1–25)
+        type: number
+        default: 5
 permissions:
-  contents: write
+  contents: read
 concurrency:
   group: issue-pilot
   cancel-in-progress: false
@@ -18,47 +27,77 @@ jobs:
   triage:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
     defaults:
       run:
         working-directory: tools/issue-pilot
     env:
-      PILOT_MODE: ${{ inputs.mode || vars.PILOT_MODE || 'demo' }}
+      # Schedules always replay. Live inference requires a manual live dispatch.
+      PILOT_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'demo' }}
+      PILOT_BACKEND: codex
+      OPENAI_MODEL: gpt-6-luna
+      PILOT_SITE_URL: https://issue-pilot-loop-observatory.awaresun14.chatgpt.site
+      PILOT_RUN_ID: gh-${{ github.run_id }}-${{ github.run_attempt }}
+      PILOT_REQUIRE_TELEMETRY: '1'
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install optional socket transport
-        if: vars.PILOT_SITE_URL != ''
+      - name: Install socket transport
         run: pip install -r requirements-telemetry.txt
-      - name: Install Agents SDK for live mode
+      - uses: actions/setup-node@v4
         if: env.PILOT_MODE == 'live'
-        run: pip install -r requirements.txt
+        with:
+          node-version: '22'
+      - name: Install pinned Codex CLI
+        if: env.PILOT_MODE == 'live'
+        run: npm install -g @openai/codex@0.166.0 --ignore-scripts
       - name: Verify worker policies
         run: python -m unittest discover -s tests -v
+      - name: Check connection prerequisites
+        env:
+          API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SITE_BEARER: ${{ secrets.PILOT_SITE_BEARER }}
+        run: |
+          test -n "$SITE_BEARER" || { echo 'Missing PILOT_SITE_BEARER Actions secret'; exit 1; }
+          if [ "$PILOT_MODE" = live ]; then
+            test -n "$API_KEY" || { echo 'Missing OPENAI_API_KEY Actions secret'; exit 1; }
+          fi
       - name: Restore persistent state
+        if: env.PILOT_MODE == 'live'
         run: |
           mkdir -p state
           if git ls-remote --exit-code --heads origin issue-pilot-state; then
             git fetch origin issue-pilot-state
             git show FETCH_HEAD:state.json > state/state.json
+          else
+            result=$?
+            if [ "$result" -ne 2 ]; then exit "$result"; fi
           fi
-      - name: Run intake and fixes
+      - name: Run intake and fixes with GPT-6 Luna only
         env:
-          GH_TOKEN: ${{ secrets.PILOT_GH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          TARGET_REPO: ${{ vars.TARGET_REPO || github.repository }}
-          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4.1' }}
-          PILOT_SITE_URL: ${{ vars.PILOT_SITE_URL }}
           PILOT_SITE_BEARER: ${{ secrets.PILOT_SITE_BEARER }}
+          TARGET_REPO: ${{ github.repository }}
+          SOURCE_REPO: ${{ inputs.source_repo || github.repository }}
+          ISSUE_LIMIT: ${{ inputs.issue_limit || 5 }}
         run: |
           if [ "$PILOT_MODE" = live ]; then
-            python pilot.py live --repo "$TARGET_REPO"
+            python pilot.py live --repo "$TARGET_REPO" --source-repo "$SOURCE_REPO" --issue-limit "$ISSUE_LIMIT" --max-fixes 1
           else
             python pilot.py demo --phase-delay 3
           fi
       - name: Save state even after partial failure
-        if: always()
+        if: always() && env.PILOT_MODE == 'live'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ ! -f state/state.json ]; then exit 0; fi
           git config user.name 'issue-pilot[bot]'
@@ -72,7 +111,7 @@ jobs:
           else
             commit=$(printf 'Persist issue groups and fix history\n' | git commit-tree "$state_tree")
           fi
-          git push origin "$commit:refs/heads/issue-pilot-state"
+          git -c 'credential.helper=!f() { printf "username=x-access-token\npassword=%s\n" "$GH_TOKEN"; }; f' push origin "$commit:refs/heads/issue-pilot-state"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
