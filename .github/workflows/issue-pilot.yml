@@ -25,8 +25,8 @@ jobs:
       github.repository == 'dahrk/openai-cookbook-fork' &&
       github.actor == 'dahrk' &&
       (github.event_name == 'workflow_dispatch' || github.event.issue.user.login == 'dahrk')
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
     permissions:
       contents: write
       issues: write
@@ -49,36 +49,44 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install socket transport
-        run: pip install -r requirements-telemetry.txt
-      - uses: actions/setup-node@v4
-        if: env.PILOT_MODE == 'live'
-        with:
-          node-version: '22'
-      - name: Install pinned Codex CLI
-        if: env.PILOT_MODE == 'live'
-        run: npm install -g @openai/codex@0.166.0 --ignore-scripts
-      - name: Verify worker policies
-        run: python -m unittest discover -s tests -v
       - name: Validate owner-authored issue before loading secrets
+        id: authorize
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET_REPO: ${{ github.repository }}
+          DISPOSITION: ${{ inputs.disposition || 'from_issue' }}
           ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
         run: |
           python - <<'PYTHON'
           import os
-          from pilot import GitHub, authorized_issue
+          from pilot import GitHub, authorized_issue, issue_outcome
           issue = authorized_issue(GitHub(os.environ['TARGET_REPO']), int(os.environ['ISSUE_NUMBER']))
-          print('Authorized issue #' + str(issue['number']) + ' by @dahrk')
+          outcome = os.environ['DISPOSITION']
+          if outcome == 'from_issue':
+              outcome = issue_outcome(issue)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('outcome=' + outcome + '\n')
+          print('Authorized issue #' + str(issue['number']) + ' by @dahrk; outcome ' + outcome)
           PYTHON
+      - name: Install socket transport
+        run: pip install -r requirements-telemetry.txt
+      - uses: actions/setup-node@v4
+        if: steps.authorize.outputs.outcome == 'implement'
+        with:
+          node-version: '22'
+      - name: Install pinned Codex CLI
+        if: steps.authorize.outputs.outcome == 'implement'
+        run: npm install -g @openai/codex@0.166.0 --ignore-scripts
+      - name: Verify worker policies
+        run: python -m unittest discover -s tests -v
       - name: Check connection prerequisites
         env:
-          API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          REQUIRE_MODEL: ${{ steps.authorize.outputs.outcome == 'implement' }}
+          API_KEY: ${{ steps.authorize.outputs.outcome == 'implement' && secrets.OPENAI_API_KEY || '' }}
           SITE_BEARER: ${{ secrets.PILOT_SITE_BEARER }}
         run: |
           test -n "$SITE_BEARER" || { echo 'Missing PILOT_SITE_BEARER Actions secret'; exit 1; }
-          if [ "$PILOT_MODE" = live ]; then
+          if [ "$REQUIRE_MODEL" = true ]; then
             test -n "$API_KEY" || { echo 'Missing OPENAI_API_KEY Actions secret'; exit 1; }
           fi
       - name: Restore persistent state
@@ -95,7 +103,7 @@ jobs:
       - name: Run intake and fixes with GPT-6 Luna only
         env:
           GH_TOKEN: ${{ github.token }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: ${{ steps.authorize.outputs.outcome == 'implement' && secrets.OPENAI_API_KEY || '' }}
           PILOT_SITE_BEARER: ${{ secrets.PILOT_SITE_BEARER }}
           TARGET_REPO: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
@@ -124,4 +132,5 @@ jobs:
         if: always()
         with:
           name: issue-pilot-report
+          retention-days: 3
           path: tools/issue-pilot/artifacts/
