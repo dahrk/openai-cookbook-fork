@@ -1,5 +1,5 @@
 name: Scheduled Issue Pilot
-run-name: Issue Pilot · issue #${{ github.event.issue.number || inputs.issue_number }} · GPT-6 Luna
+run-name: "Issue Pilot · issue #${{ github.event.issue.number || inputs.issue_number }} · GPT-6 Luna"
 on:
   issues:
     types: [opened, reopened]
@@ -17,7 +17,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: issue-pilot
+  group: issue-pilot-${{ github.event.issue.number || inputs.issue_number }}
   cancel-in-progress: false
 jobs:
   triage:
@@ -36,6 +36,7 @@ jobs:
         working-directory: tools/issue-pilot
     env:
       PILOT_MODE: live
+      STATE_BRANCH: issue-pilot-state-${{ github.event.issue.number || inputs.issue_number }}
       PILOT_BACKEND: codex
       OPENAI_MODEL: gpt-6-luna
       PILOT_SITE_URL: https://issue-pilot-loop-observatory.awaresun14.chatgpt.site
@@ -84,8 +85,8 @@ jobs:
         if: env.PILOT_MODE == 'live'
         run: |
           mkdir -p state
-          if git ls-remote --exit-code --heads origin issue-pilot-state; then
-            git fetch origin issue-pilot-state
+          if git ls-remote --exit-code --heads origin "$STATE_BRANCH"; then
+            git fetch origin "$STATE_BRANCH"
             git show FETCH_HEAD:state.json > state/state.json
           else
             result=$?
@@ -111,14 +112,14 @@ jobs:
           git config user.email 'issue-pilot@users.noreply.github.com'
           state_blob=$(git hash-object -w state/state.json)
           state_tree=$(printf '100644 blob %s\tstate.json\n' "$state_blob" | git mktree)
-          if git ls-remote --exit-code --heads origin issue-pilot-state; then
-            git fetch origin issue-pilot-state
+          if git ls-remote --exit-code --heads origin "$STATE_BRANCH"; then
+            git fetch origin "$STATE_BRANCH"
             parent=$(git rev-parse FETCH_HEAD)
             commit=$(printf 'Persist issue groups and fix history\n' | git commit-tree "$state_tree" -p "$parent")
           else
             commit=$(printf 'Persist issue groups and fix history\n' | git commit-tree "$state_tree")
           fi
-          git -c 'credential.helper=!f() { printf "username=x-access-token\npassword=%s\n" "$GH_TOKEN"; }; f' push origin "$commit:refs/heads/issue-pilot-state"
+          git -c 'credential.helper=!f() { printf "username=x-access-token\npassword=%s\n" "$GH_TOKEN"; }; f' push origin "$commit:refs/heads/$STATE_BRANCH"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
