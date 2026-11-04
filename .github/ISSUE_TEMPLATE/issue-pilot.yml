@@ -7,6 +7,7 @@ body:
       value: |
         Only issues created by @dahrk can run this workflow. Other authors cannot consume its secrets.
         Implement uses GPT-6 Luna and can open a draft README fix. Human review keeps the issue open.
+        Review checks one README-only PR and publishes advisory findings before returning to a person.
         Won't implement closes this issue as not planned. No choice automatically merges a PR.
   - type: dropdown
     id: outcome
@@ -14,9 +15,10 @@ body:
       label: Pilot outcome
       options:
         - Implement with GPT-6 Luna
+        - Review a pull request with GPT-6 Luna
         - Needs human review
         - Won't implement (close as not planned)
-      default: 1
+      default: 2
     validations:
       required: true
   - type: textarea
@@ -26,3 +28,13 @@ body:
       description: Describe the evidence, expected behavior, and requested documentation change.
     validations:
       required: true
+  - type: input
+    id: review_pr
+    attributes:
+      label: Pull request number
+      description: Required only for Review. An open README-only PR in this fork, for example 5.
+  - type: input
+    id: review_focus
+    attributes:
+      label: Review focus
+      description: Required checks for the review agent (at most 1200 characters).

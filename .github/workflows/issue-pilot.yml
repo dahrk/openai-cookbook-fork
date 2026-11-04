@@ -12,7 +12,7 @@ on:
       disposition:
         description: Follow the issue form or explicitly choose an escape hatch
         type: choice
-        options: [from_issue, implement, needs_human_review, wont_implement]
+        options: [from_issue, implement, review, needs_human_review, wont_implement]
         default: from_issue
 permissions:
   contents: read
@@ -60,11 +60,13 @@ jobs:
         run: |
           python - <<'PYTHON'
           import os
-          from pilot import GitHub, authorized_issue, issue_outcome
+          from pilot import GitHub, authorized_issue, issue_outcome, review_request
           issue = authorized_issue(GitHub(os.environ['TARGET_REPO']), int(os.environ['ISSUE_NUMBER']))
           outcome = os.environ['DISPOSITION']
           if outcome == 'from_issue':
               outcome = issue_outcome(issue)
+          if outcome == 'review':
+              review_request(issue)
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('outcome=' + outcome + '\n')
           print('Authorized issue #' + str(issue['number']) + ' by @dahrk; outcome ' + outcome)
@@ -72,18 +74,18 @@ jobs:
       - name: Install socket transport
         run: pip install -r requirements-telemetry.txt
       - uses: actions/setup-node@v4
-        if: steps.authorize.outputs.outcome == 'implement'
+        if: steps.authorize.outputs.outcome == 'implement' || steps.authorize.outputs.outcome == 'review'
         with:
           node-version: '22'
       - name: Install pinned Codex CLI
-        if: steps.authorize.outputs.outcome == 'implement'
+        if: steps.authorize.outputs.outcome == 'implement' || steps.authorize.outputs.outcome == 'review'
         run: npm install -g @openai/codex@0.166.0 --ignore-scripts
       - name: Verify worker policies
         run: python -m unittest discover -s tests -v
       - name: Check connection prerequisites
         env:
-          REQUIRE_MODEL: ${{ steps.authorize.outputs.outcome == 'implement' }}
-          API_KEY: ${{ steps.authorize.outputs.outcome == 'implement' && secrets.OPENAI_API_KEY || '' }}
+          REQUIRE_MODEL: ${{ steps.authorize.outputs.outcome == 'implement' || steps.authorize.outputs.outcome == 'review' }}
+          API_KEY: ${{ (steps.authorize.outputs.outcome == 'implement' || steps.authorize.outputs.outcome == 'review') && secrets.OPENAI_API_KEY || '' }}
           SITE_BEARER: ${{ secrets.PILOT_SITE_BEARER }}
         run: |
           test -n "$SITE_BEARER" || { echo 'Missing PILOT_SITE_BEARER Actions secret'; exit 1; }
@@ -104,7 +106,7 @@ jobs:
       - name: Run intake and fixes with GPT-6 Luna only
         env:
           GH_TOKEN: ${{ github.token }}
-          OPENAI_API_KEY: ${{ steps.authorize.outputs.outcome == 'implement' && secrets.OPENAI_API_KEY || '' }}
+          OPENAI_API_KEY: ${{ (steps.authorize.outputs.outcome == 'implement' || steps.authorize.outputs.outcome == 'review') && secrets.OPENAI_API_KEY || '' }}
           PILOT_SITE_BEARER: ${{ secrets.PILOT_SITE_BEARER }}
           TARGET_REPO: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}

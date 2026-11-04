@@ -1,6 +1,7 @@
 """Scheduled issue triage and bounded, reviewable documentation fixes."""
 from __future__ import annotations
 import argparse
+import base64
 import hashlib
 import html
 import json
@@ -19,6 +20,7 @@ ALLOWED_AUTHOR = 'dahrk'
 TARGET_REPO = 'dahrk/openai-cookbook-fork'
 OUTCOMES = {
     'Implement with GPT-6 Luna': 'implement',
+    'Review a pull request with GPT-6 Luna': 'review',
     'Needs human review': 'needs_human_review',
     "Won't implement (close as not planned)": 'wont_implement'}
 
@@ -44,7 +46,7 @@ def issue_outcome(issue):
     return OUTCOMES[value]
 
 
-def terminal_outcome(args, outcome):
+def terminal_outcome(args, outcome, context=''):
     """Park for a person, or close only the selected owner-authored issue."""
     api = GitHub(args.repo or TARGET_REPO)
     issue = authorized_issue(api, args.issue_number)
@@ -54,6 +56,8 @@ def terminal_outcome(args, outcome):
         detail = f'Issue #{issue["number"]} closed as not planned; no implementation requested'
     else:
         detail = f'Issue #{issue["number"]} remains open and needs human review; worker stopped'
+    if context:
+        detail += '. ' + context
     args.outcome = outcome
     atomic_json(Path(args.output) / 'outcome.json', {
         'outcome': outcome, 'issue_url': issue['html_url'], 'detail': detail,
@@ -61,6 +65,95 @@ def terminal_outcome(args, outcome):
     args.telemetry.emit(phase='review' if outcome == 'needs_human_review' else 'learn',
                         detail=detail, status=outcome)
     print(detail)
+
+
+def review_request(issue):
+    body = issue.get('body') or ''
+    def field(label):
+        match = re.search(r'^### ' + re.escape(label) + r'\s*\n+([^\n]+)', body, re.M)
+        return match.group(1).strip() if match else ''
+    number = field('Pull request number')
+    if not re.fullmatch(r'[1-9][0-9]{0,8}', number):
+        raise ValueError('Review requires a positive Pull request number in the issue form')
+    focus = field('Review focus')
+    if not focus or focus == '_No response_':
+        focus = 'Check documentation correctness and unintended changes in the patch.'
+    if len(focus) > 1200:
+        raise ValueError('Review focus must be at most 1200 characters')
+    return int(number), focus
+
+
+def review_pull_request(args, api, issue):
+    number, focus = review_request(issue)
+    pr = api.call(f'/pulls/{number}')
+    if (pr['state'] != 'open' or pr['base']['repo']['full_name'] != TARGET_REPO
+            or not pr['head'].get('repo') or pr['head']['repo']['full_name'] != TARGET_REPO):
+        raise ValueError('Review is restricted to an open pull request within the demo fork')
+    if pr.get('changed_files') != 1:
+        raise ValueError('Demo review is limited to a single README.md change')
+    files = api.pages(f'/pulls/{number}/files')
+    if len(files) != 1 or files[0]['filename'] != 'README.md' or not files[0].get('patch'):
+        raise ValueError('Review needs the complete patch for README.md only')
+    patch = files[0]['patch']
+    if len(patch) > 20000:
+        raise ValueError('Review patch exceeds the demo size limit')
+    head = pr['head']['sha']
+    marker = f'<!-- issue-pilot:agent-review:{issue["number"]}:{head} -->'
+    args.telemetry.boundary('review',
+        f'Issue #{issue["number"]}: reviewing PR #{number} at {head[:12]}; focus: {focus}', {'prs': 1})
+    prior = next((review for review in api.pages(f'/pulls/{number}/reviews')
+                  if marker in (review.get('body') or '') and review.get('commit_id') == head
+                  and review.get('state') == 'COMMENTED'
+                  and review.get('user', {}).get('login') == 'github-actions[bot]'), None)
+    output = Path(args.output) / 'review.json'
+    if prior:
+        atomic_json(output, {'pr_number': number, 'head_sha': head, 'review_url': prior['html_url'],
+                            'recovered': True, 'focus': focus})
+        terminal_outcome(args, 'needs_human_review', f'PR #{number} agent review already recorded at {head[:12]}')
+        return
+    def content(ref):
+        file = api.call('/contents/README.md?ref=' + ref)
+        if file.get('type') != 'file' or file.get('encoding') != 'base64' or file.get('size', 100001) > 100000:
+            raise ValueError('Review source is unavailable or exceeds the size limit')
+        return base64.b64decode(file['content']).decode('utf-8')
+    evidence = {'pr_number': number, 'head_sha': head, 'focus': focus, 'path': 'README.md',
+                'patch': patch, 'base_content': content(pr['base']['sha']), 'head_content': content(head)}
+    result = CodexBrain().review(evidence)
+    if (set(result) != {'summary', 'findings', 'limitations'} or not isinstance(result['summary'], str)
+            or not result['summary'].strip() or not isinstance(result['limitations'], str)
+            or not isinstance(result['findings'], list) or len(result['findings']) > 8):
+        raise ValueError('Invalid review result')
+    lines = len(evidence['head_content'].splitlines())
+    for finding in result['findings']:
+        if (set(finding) != {'severity', 'path', 'line', 'message'} or finding['path'] != 'README.md'
+                or finding['severity'] not in ('high', 'medium', 'low')
+                or type(finding['line']) is not int or not 1 <= finding['line'] <= lines
+                or not isinstance(finding['message'], str) or not finding['message'].strip()):
+            raise ValueError('Invalid or out-of-scope review finding')
+    # Recheck the source immediately before publication. Never review a newer head by accident.
+    current = api.call(f'/pulls/{number}')
+    if current['state'] != 'open' or current['head']['sha'] != head:
+        raise RuntimeError('Pull request changed during review; refusing a stale review')
+    safe = lambda value: value.replace('@', '@\u200b').replace('<!--', '&lt;!--')
+    report = [f'## Issue Pilot agent review of PR #{number}',
+              f'Commit: `{head}`', 'Focus: ' + safe(focus), safe(result['summary'])]
+    report += [f'- **{item["severity"]}** `README.md:{item["line"]}`: ' + safe(item['message'])
+               for item in result['findings']]
+    if not result['findings']:
+        report.append('No concrete findings in this focused review.')
+    report += ['Validation limits: ' + safe(result['limitations']),
+               'Advisory comment review only. A human decides approval and merging.', marker]
+    body = '\n\n'.join(report)
+    if len(body) > 20000:
+        raise ValueError('Review report exceeds the demo size limit')
+    published = api.call(f'/pulls/{number}/reviews', {'commit_id': head, 'event': 'COMMENT', 'body': body})
+    atomic_json(output, {**result, 'pr_number': number, 'head_sha': head, 'focus': focus,
+                        'review_url': published['html_url'], 'recovered': False})
+    args.telemetry.boundary('review', f'Issue #{issue["number"]}: PR #{number} review published at '
+        f'{head[:12]}; {len(result["findings"])} findings. ' + result['summary'][:1000], {'prs': 1})
+    terminal_outcome(args, 'needs_human_review',
+        f'PR #{number} agent review published at {head[:12]}; {len(result["findings"])} findings')
+    print(f'Advisory agent review published: {published["html_url"]}')
 
 
 def now():
@@ -343,6 +436,9 @@ def live(args):
         if os.getenv('PILOT_REQUIRE_TELEMETRY') == '1':
             args.telemetry.require_delivery()
         outcome = args.disposition if args.disposition != 'from_issue' else issue_outcome(selected)
+        if outcome == 'review':
+            review_pull_request(args, api, selected)
+            return
         if outcome != 'implement':
             terminal_outcome(args, outcome)
             return
@@ -525,7 +621,7 @@ def main():
     parser.add_argument('mode', choices=['demo', 'live'])
     parser.add_argument('--repo')
     parser.add_argument('--issue-number', type=int, default=0)
-    parser.add_argument('--disposition', choices=['from_issue', 'implement',
+    parser.add_argument('--disposition', choices=['from_issue', 'implement', 'review',
                         'needs_human_review', 'wont_implement'], default='from_issue')
     parser.add_argument('--source-repo', help='Read reports from this repository; all writes use --repo')
     parser.add_argument('--issue-limit', type=int, default=0,
