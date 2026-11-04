@@ -18,9 +18,17 @@ Follow [the eight-minute presenter script](docs/DEMO.md). A shallow, sparse chec
 
 ## What runs live
 
-`.github/workflows/issue-pilot.yml` runs hourly (UTC) and supports manual dispatch. Scheduled runs always use `demo`. Live inference requires manual dispatch with `mode=live`. GitHub schedules are best effort, may be delayed, and require this workflow on the default branch. Inactive public repositories may have schedules disabled by GitHub. The workflow is installed on `dahrk/openai-cookbook-fork/main`; hosted live execution requires the two Actions secrets below.
+The workflow is installed in `dahrk/openai-cookbook-fork`. It runs on newly opened or reopened issues only when both the issue author and triggering actor are `@dahrk`. Manual dispatch also requires `@dahrk` and an open issue number authored by that account. The worker fetches and rechecks the current issue before model use or closing it. Other authors cannot start a worker using this workflow's secrets. Hourly scheduling is disabled.
 
-1. Read open issues, excluding PRs, with complete API pagination. Manual dispatch defaults to an explicit batch of five oldest open upstream reports; logs and Site telemetry report the processed and total counts. Set `source_repo` to choose the read-only issue source and `issue_limit` to 1–25. All proposals and state writes target the selected fork. Local `--issue-limit 0` processes every report. Source repository identity is persisted with state to prevent issue-number collisions.
+Use **Issues → New issue → Issue Pilot**. The form offers:
+
+- **Implement with GPT-6 Luna**: process the selected issue, allow at most one bounded draft README fix, then stop for human review.
+- **Needs human review**: leave the issue open and record `needs_human_review` without model inference.
+- **Won't implement (close as not planned)**: close only the selected issue with `state_reason=not_planned`, record `wont_implement`, and skip model inference.
+
+Missing form choices default to human review. Manual dispatch accepts `issue_number` and `disposition` (`from_issue`, `implement`, `needs_human_review`, or `wont_implement`). A selected owner-authored issue can request implementation without the duplicate-report threshold. Draft PRs always require a person; no outcome automatically merges them. See the workspace's local `ESCAPE_HATCHES.md` for the demo reference.
+
+1. Read open issues, excluding PRs, with complete API pagination. Issue dispatch reads the selected owner-authored issue. Local batch entry points also filter reports to `@dahrk`; logs and Site telemetry report the processed and total counts. All proposals and state writes target the selected fork. Local `--issue-limit 0` processes every report. Source repository identity is persisted with state to prevent issue-number collisions.
 2. Codex CLI structured output compares each new issue with persisted root causes. Confidence below 0.85 makes a separate group. Previously seen issue IDs retain their group.
 3. Rank by the cumulative number of distinct issue reports, descending. This demo deliberately treats report count as impact; reactions and severity are not additional weights. Historical reports stay counted after closure. A repeated issue contributes once.
 4. Reconcile existing open, closed, and merged PRs using stable per-group branch names. Reuse any prior PR. Closed unmerged PRs require manual intervention rather than automatic reopening.
@@ -40,7 +48,7 @@ python3 setup_fork.py --repo dahrk/openai-cookbook-fork
 
 With `--repo`, the script reuses the selected existing fork and refuses to create a replacement if it is unavailable. Without `--repo`, it reuses or creates your `openai-cookbook-demo` fork. It enables issues, snapshots all open upstream issues and imports them with provenance and retry markers. Use `--no-copy-issues` to keep only the local snapshot. GitHub forks do not automatically copy issues. The checkout is depth one, blob-filtered and sparse; root files are available for this worker. Use `git sparse-checkout disable` later for the entire repository.
 
-Setup installs this worker under `cookbook/tools/issue-pilot` and the workflow under `cookbook/.github/workflows/issue-pilot.yml`, then updates target and owner handles. It preserves an existing installation's local edits. Review those files, commit and push them to the fork's default branch to load the workflow. Enable GitHub Actions on the fork if GitHub requires it. The workflow now runs from `tools/issue-pilot`; it is intended to be installed in the fork rather than run from this extracted standalone directory.
+Setup installs this worker under `cookbook/tools/issue-pilot` and the workflow under `cookbook/.github/workflows/issue-pilot.yml`, then updates target and owner handles. It preserves an existing installation's local edits. Review those files, commit and push them to the fork's default branch to load the workflow. Enable GitHub Actions on the fork if GitHub requires it. The workflow runs from `tools/issue-pilot`; it is intended to be installed in the fork rather than run from this extracted standalone directory.
 
 Configure these fork secrets through GitHub's secure UI or authenticated CLI:
 
@@ -49,9 +57,9 @@ Configure these fork secrets through GitHub's secure UI or authenticated CLI:
 
 The workflow pins `PILOT_BACKEND=codex` and `OPENAI_MODEL=gpt-6-luna`; another model is rejected without fallback. Codex CLI is pinned to `0.166.0`. The Site origin is the existing published private Site, and the target is `github.repository`. The workflow uses its own `GITHUB_TOKEN` with contents/issues/pull-request write permissions; no separate GitHub token secret is needed. GitHub repository policy must allow Actions to create pull requests. Credentials are scoped to the steps that need them. The Codex child process receives only its API credential, runs from an isolated temporary directory, and has shell, browser, plugin, and subagent tools disabled. Python retains responsibility for allowlisted draft-PR writes.
 
-No repository variables are required. The runner ID is `gh-<run_id>-<attempt>`, matching the Site's run list. Required telemetry fails the workflow if the Site does not acknowledge the initial or terminal events. The secret setup remains pending explicit approval to transfer the API key and Site bearer into this public fork's encrypted Actions secrets. Schedule triggers remain demo-only.
+No repository variables are required. The runner ID is `gh-<run_id>-<attempt>`, matching the Site's run list. Required telemetry fails the workflow if the Site does not acknowledge the initial or terminal events. The user approved configuring both encrypted Actions secrets. Do not store credential values in source or artifacts. There is no separate GitHub token secret: the workflow uses its scoped `GITHUB_TOKEN`.
 
-To dispatch the first live run, select **Scheduled Issue Pilot → Run workflow → mode=live**, keep `source_repo=openai/openai-cookbook` and `issue_limit=5`, and choose `main`. This reads real upstream reports without posting or copying upstream issues. At most one new draft README fix is allowed; a declined diagnosis or lack of duplicate reports can produce no PR.
+To run live, create an Issue Pilot issue as `@dahrk`, choose the form outcome, and submit. To retry an existing issue, choose **Actions → Scheduled Issue Pilot → Run workflow**, enter the open owner-authored issue number, and select `implement`. The Site lists the run as `gh-<run_id>-<attempt>`. Its main view emphasizes active workers; outcome filters expose parked and closed runs with their ordered phase history.
 
 For a local socket-connected offline replay:
 
@@ -67,7 +75,7 @@ Without `PILOT_SITE_URL`, replay needs only the Python standard library. Every r
 Local live execution requires `npm install -g @openai/codex@0.166.0`, the telemetry dependency when using the Site, `GH_TOKEN`, and `OPENAI_API_KEY`:
 
 ```sh
-.venv/bin/python pilot.py live --repo dahrk/openai-cookbook-fork --source-repo openai/openai-cookbook --issue-limit 5
+.venv/bin/python pilot.py live --repo dahrk/openai-cookbook-fork --issue-number YOUR_ISSUE_NUMBER --disposition implement
 ```
 
 Serialize live local runs yourself; do not run a local writer alongside the workflow. Scheduled runs persist authoritative grouping memory on `issue-pilot-state`. The live worker refuses writes to `openai/openai-cookbook`. The learning phase remembers groups, PRs and review outcomes; this demo does not train models or modify its own implementation.

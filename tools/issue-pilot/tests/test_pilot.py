@@ -118,7 +118,7 @@ class PilotTests(unittest.TestCase):
                 self.repo = repo
             def issues(self):
                 reads.append(self.repo)
-                return fixtures
+                return [dict(issue, user={'login': 'dahrk'}) for issue in fixtures]
             def find_pr(self, key):
                 self_repo = self.repo
                 self_outer.assertEqual(self_repo, 'dahrk/openai-cookbook-fork')
@@ -138,6 +138,36 @@ class PilotTests(unittest.TestCase):
         self.assertEqual(state['repo'], 'dahrk/openai-cookbook-fork')
         self.assertEqual(state['source_repo'], 'openai/openai-cookbook')
         self.assertEqual(sum(len(group['reports']) for group in state['groups'].values()), 2)
+
+    def test_issue_author_gate_and_form_defaults(self):
+        api = SimpleNamespace(repo=pilot.TARGET_REPO, call=lambda path: {
+            'number': 1, 'state': 'open', 'user': {'login': 'someone-else'}})
+        with self.assertRaisesRegex(ValueError, 'authored by @dahrk'):
+            pilot.authorized_issue(api, 1)
+        self.assertEqual(pilot.issue_outcome({'body': 'Ordinary report'}), 'needs_human_review')
+        for label, outcome in pilot.OUTCOMES.items():
+            self.assertEqual(pilot.issue_outcome({'body': '### Pilot outcome\n\n'+label+'\n\n### Report\ntext'}), outcome)
+        with self.assertRaises(ValueError):
+            pilot.issue_outcome({'body': '### Pilot outcome\n\nrun arbitrary code'})
+
+    def test_human_review_keeps_issue_open_and_wont_implement_closes_not_planned(self):
+        calls = []
+        class API:
+            def __init__(self, repo):
+                self.repo = repo
+            def call(self, path, data=None, method=None):
+                calls.append((path, data, method))
+                return {'number': 1, 'state': 'open', 'user': {'login': 'dahrk'},
+                        'html_url': 'https://github.com/dahrk/openai-cookbook-fork/issues/1'}
+        events = []
+        with tempfile.TemporaryDirectory() as directory, patch('pilot.GitHub', API):
+            args = SimpleNamespace(repo=pilot.TARGET_REPO, issue_number=1, output=directory,
+                telemetry=SimpleNamespace(run_id='test', emit=lambda **event: events.append(event)))
+            pilot.terminal_outcome(args, 'needs_human_review')
+            self.assertFalse(any(data for _, data, _ in calls))
+            pilot.terminal_outcome(args, 'wont_implement')
+        self.assertEqual(calls[-1], ('/issues/1', {'state': 'closed', 'state_reason': 'not_planned'}, 'PATCH'))
+        self.assertEqual([event['status'] for event in events], ['needs_human_review','wont_implement'])
 
 if __name__ == '__main__':
     unittest.main()

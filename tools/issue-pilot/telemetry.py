@@ -15,6 +15,11 @@ class Cancelled(Exception):
     pass
 
 
+class Halted(Exception):
+    def __init__(self, outcome):
+        self.outcome = outcome
+
+
 class Telemetry:
     def __init__(self, repo, mode, directory='artifacts', delay=0):
         self.run_id = os.getenv('PILOT_RUN_ID') or str(uuid.uuid4())
@@ -83,6 +88,9 @@ class Telemetry:
                     self.emit(detail='Cancelled at a cooperative boundary', status='cancelled')
                     self._ack(command_id)
                     raise Cancelled()
+                elif action in ('needs_human_review', 'wont_implement'):
+                    self._ack(command_id)
+                    raise Halted(action)
                 self.emit(detail=action + ' applied at a cooperative boundary', status='paused' if self.paused else 'running')
                 self._ack(command_id)
             if not self.paused:

@@ -1,23 +1,19 @@
 name: Scheduled Issue Pilot
-run-name: Issue Pilot · ${{ inputs.mode || 'demo' }} · GPT-6 Luna
+run-name: Issue Pilot · issue #${{ github.event.issue.number || inputs.issue_number }} · GPT-6 Luna
 on:
-  schedule:
-    - cron: '0 * * * *'
+  issues:
+    types: [opened, reopened]
   workflow_dispatch:
     inputs:
-      mode:
-        description: Credential-free replay or live Luna run
-        type: choice
-        options: [demo, live]
-        default: demo
-      source_repo:
-        description: Read-only issue source; proposals always target this fork
-        type: string
-        default: openai/openai-cookbook
-      issue_limit:
-        description: Maximum reports for this explicit intake batch (1–25)
+      issue_number:
+        description: Open issue authored by @dahrk in this fork
         type: number
-        default: 5
+        required: true
+      disposition:
+        description: Follow the issue form or explicitly choose an escape hatch
+        type: choice
+        options: [from_issue, implement, needs_human_review, wont_implement]
+        default: from_issue
 permissions:
   contents: read
 concurrency:
@@ -25,6 +21,10 @@ concurrency:
   cancel-in-progress: false
 jobs:
   triage:
+    if: >-
+      github.repository == 'dahrk/openai-cookbook-fork' &&
+      github.actor == 'dahrk' &&
+      (github.event_name == 'workflow_dispatch' || github.event.issue.user.login == 'dahrk')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -35,8 +35,7 @@ jobs:
       run:
         working-directory: tools/issue-pilot
     env:
-      # Schedules always replay. Live inference requires a manual live dispatch.
-      PILOT_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'demo' }}
+      PILOT_MODE: live
       PILOT_BACKEND: codex
       OPENAI_MODEL: gpt-6-luna
       PILOT_SITE_URL: https://issue-pilot-loop-observatory.awaresun14.chatgpt.site
@@ -60,6 +59,18 @@ jobs:
         run: npm install -g @openai/codex@0.166.0 --ignore-scripts
       - name: Verify worker policies
         run: python -m unittest discover -s tests -v
+      - name: Validate owner-authored issue before loading secrets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+        run: |
+          python - <<'PYTHON'
+          import os
+          from pilot import GitHub, authorized_issue
+          issue = authorized_issue(GitHub(os.environ['TARGET_REPO']), int(os.environ['ISSUE_NUMBER']))
+          print('Authorized issue #' + str(issue['number']) + ' by @dahrk')
+          PYTHON
       - name: Check connection prerequisites
         env:
           API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -86,14 +97,10 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PILOT_SITE_BEARER: ${{ secrets.PILOT_SITE_BEARER }}
           TARGET_REPO: ${{ github.repository }}
-          SOURCE_REPO: ${{ inputs.source_repo || github.repository }}
-          ISSUE_LIMIT: ${{ inputs.issue_limit || 5 }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+          DISPOSITION: ${{ inputs.disposition || 'from_issue' }}
         run: |
-          if [ "$PILOT_MODE" = live ]; then
-            python pilot.py live --repo "$TARGET_REPO" --source-repo "$SOURCE_REPO" --issue-limit "$ISSUE_LIMIT" --max-fixes 1
-          else
-            python pilot.py demo --phase-delay 3
-          fi
+          python pilot.py live --repo "$TARGET_REPO" --issue-number "$ISSUE_NUMBER" --disposition "$DISPOSITION" --max-fixes 1
       - name: Save state even after partial failure
         if: always() && env.PILOT_MODE == 'live'
         env:

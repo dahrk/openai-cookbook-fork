@@ -5,7 +5,7 @@ import tempfile
 import threading
 import unittest
 from unittest.mock import patch
-from telemetry import Telemetry, Cancelled
+from telemetry import Telemetry, Cancelled, Halted
 
 
 class TelemetryTests(unittest.TestCase):
@@ -56,3 +56,10 @@ class TelemetryTests(unittest.TestCase):
         self.t.emit(detail='A real integration requires a remote receipt')
         with self.assertRaisesRegex(RuntimeError, 'not configured'):
             self.t.require_delivery(timeout=0)
+
+    def test_escape_hatch_is_acknowledged_and_returns_to_host_for_issue_updates(self):
+        self.t.commands.append({'id': 'stop-1', 'action': 'wont_implement'})
+        with self.assertRaises(Halted) as halt:
+            self.t.checkpoint()
+        self.assertEqual(halt.exception.outcome, 'wont_implement')
+        self.assertEqual(self.t.pending[-1]['command_id'], 'stop-1')

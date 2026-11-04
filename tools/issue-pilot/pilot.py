@@ -11,10 +11,56 @@ import subprocess
 import tempfile
 from datetime import datetime, timedelta, timezone
 from urllib.request import Request, urlopen
-from telemetry import Telemetry, Cancelled
+from telemetry import Telemetry, Cancelled, Halted
 from codex_brain import CodexBrain, selected_model
 
 ROOT = Path(__file__).parent
+ALLOWED_AUTHOR = 'dahrk'
+TARGET_REPO = 'dahrk/openai-cookbook-fork'
+OUTCOMES = {
+    'Implement with GPT-6 Luna': 'implement',
+    'Needs human review': 'needs_human_review',
+    "Won't implement (close as not planned)": 'wont_implement'}
+
+
+def authorized_issue(api, number):
+    if api.repo.lower() != TARGET_REPO:
+        raise ValueError('Issue-triggered runs are restricted to ' + TARGET_REPO)
+    issue = api.call(f'/issues/{number}')
+    if 'pull_request' in issue or issue.get('user', {}).get('login', '').lower() != ALLOWED_AUTHOR:
+        raise ValueError('Only issues authored by @dahrk may run Issue Pilot')
+    if issue.get('state') != 'open':
+        raise ValueError('Issue must be open')
+    return issue
+
+
+def issue_outcome(issue):
+    match = re.search(r'^### Pilot outcome\s*\n+([^\n]+)', issue.get('body') or '', re.M)
+    if not match:
+        return 'needs_human_review'
+    value = match.group(1).strip()
+    if value not in OUTCOMES:
+        raise ValueError('Unrecognized Pilot outcome; refusing automatic implementation')
+    return OUTCOMES[value]
+
+
+def terminal_outcome(args, outcome):
+    """Park for a person, or close only the selected owner-authored issue."""
+    api = GitHub(args.repo or TARGET_REPO)
+    issue = authorized_issue(api, args.issue_number)
+    if outcome == 'wont_implement':
+        api.call(f'/issues/{issue["number"]}',
+                 {'state': 'closed', 'state_reason': 'not_planned'}, 'PATCH')
+        detail = f'Issue #{issue["number"]} closed as not planned; no implementation requested'
+    else:
+        detail = f'Issue #{issue["number"]} remains open and needs human review; worker stopped'
+    args.outcome = outcome
+    atomic_json(Path(args.output) / 'outcome.json', {
+        'outcome': outcome, 'issue_url': issue['html_url'], 'detail': detail,
+        'model': selected_model(), 'run_id': args.telemetry.run_id})
+    args.telemetry.emit(phase='review' if outcome == 'needs_human_review' else 'learn',
+                        detail=detail, status=outcome)
+    print(detail)
 
 
 def now():
@@ -286,7 +332,22 @@ def live(args):
     if backend not in ('codex', 'agents'):
         raise ValueError('PILOT_BACKEND must be codex or agents')
     model = selected_model()
-    api, brain = GitHub(repo), (CodexBrain() if backend == 'codex' else AgentBrain())
+    api = GitHub(repo)
+    issue_number = getattr(args, 'issue_number', 0)
+    selected = None
+    if issue_number:
+        if os.getenv('GITHUB_ACTIONS') == 'true' and os.getenv('GITHUB_ACTOR') != ALLOWED_AUTHOR:
+            raise ValueError('Only @dahrk may dispatch Issue Pilot')
+        selected = authorized_issue(api, issue_number)
+        args.telemetry.boundary('intake', f'Authorized @{ALLOWED_AUTHOR} issue #{issue_number}; {model}')
+        if os.getenv('PILOT_REQUIRE_TELEMETRY') == '1':
+            args.telemetry.require_delivery()
+        outcome = args.disposition if args.disposition != 'from_issue' else issue_outcome(selected)
+        if outcome != 'implement':
+            terminal_outcome(args, outcome)
+            return
+        config['min_reports'] = 1
+    brain = CodexBrain() if backend == 'codex' else AgentBrain()
     source_repo = args.source_repo or repo
     config['source_repo'] = source_repo
     state_path = Path(args.state)
@@ -301,7 +362,9 @@ def live(args):
     telemetry.boundary('intake', f'Reading {source_repo}; target {repo}; {backend} / {model}')
     if os.getenv('PILOT_REQUIRE_TELEMETRY') == '1':
         telemetry.require_delivery()
-    issues = (api if source_repo == repo else GitHub(source_repo)).issues()
+    issues = [selected] if selected else (api if source_repo == repo else GitHub(source_repo)).issues()
+    # Batch/local entry points enforce the same author policy as issue dispatch.
+    issues = [issue for issue in issues if issue.get('user', {}).get('login', '').lower() == ALLOWED_AUTHOR]
     total_issues = len(issues)
     if args.issue_limit:
         issues = sorted(issues, key=lambda issue: issue['number'])[:args.issue_limit]
@@ -350,6 +413,10 @@ def live(args):
     atomic_json(state_path, state)
     telemetry.boundary('learn', 'Checkpointing groups and PR outcomes; model weights are unchanged', {'issues': len(issues), 'groups': len(groups), 'prs': sum(bool(g.get('pr')) for g in groups.values())})
     write_report(state, events, Path(args.output))
+    if selected:
+        # An implementation attempt always returns to a person, including a draft
+        # PR, a declined diagnosis, or a report that needs more context.
+        terminal_outcome(args, 'needs_human_review')
     print('\n'.join(events) or 'No new actions')
 
 
@@ -457,6 +524,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', choices=['demo', 'live'])
     parser.add_argument('--repo')
+    parser.add_argument('--issue-number', type=int, default=0)
+    parser.add_argument('--disposition', choices=['from_issue', 'implement',
+                        'needs_human_review', 'wont_implement'], default='from_issue')
     parser.add_argument('--source-repo', help='Read reports from this repository; all writes use --repo')
     parser.add_argument('--issue-limit', type=int, default=0,
                         help='Explicit intake batch size, 1–25; 0 processes all reports')
@@ -469,17 +539,31 @@ def main():
         parser.error('--max-fixes must be between 0 and 3')
     if not 0 <= args.issue_limit <= 25:
         parser.error('--issue-limit must be between 0 and 25')
+    if args.issue_number < 0:
+        parser.error('--issue-number must be non-negative')
     repo = args.repo or json.loads((ROOT / 'config.json').read_text())['repo']
     if args.mode == 'demo':
         repo = 'demo/openai-cookbook (synthetic reports)'
     args.telemetry = Telemetry(repo, args.mode, args.output, args.phase_delay if args.mode == 'demo' else 0)
     try:
         (demo if args.mode == 'demo' else live)(args)
-        args.telemetry.emit(detail='Run completed', status='completed')
+        if not getattr(args, 'outcome', None):
+            args.telemetry.emit(detail='Run completed', status='completed')
         if os.getenv('PILOT_REQUIRE_TELEMETRY') == '1':
             args.telemetry.require_delivery()
     except Cancelled:
         print('Run cancelled at a cooperative boundary; completed side effects remain checkpointed')
+    except Halted as halt:
+        try:
+            if args.mode == 'live' and args.issue_number:
+                terminal_outcome(args, halt.outcome)
+            else:
+                args.telemetry.emit(detail='Replay stopped: ' + halt.outcome, status=halt.outcome)
+        except BaseException as error:
+            args.telemetry.emit(detail='Outcome update failed: ' + type(error).__name__, status='failed')
+            raise
+        if os.getenv('PILOT_REQUIRE_TELEMETRY') == '1':
+            args.telemetry.require_delivery()
     except BaseException as error:
         args.telemetry.emit(detail='Run failed: ' + type(error).__name__, status='failed')
         raise

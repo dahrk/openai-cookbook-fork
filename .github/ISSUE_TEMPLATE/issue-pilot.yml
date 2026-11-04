@@ -1,0 +1,28 @@
+name: Issue Pilot
+description: Route a report through Issue Pilot (automation runs only for @dahrk).
+title: "[Issue Pilot] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Only issues created by @dahrk can run this workflow. Other authors cannot consume its secrets.
+        Implement uses GPT-6 Luna and can open a draft README fix. Human review keeps the issue open.
+        Won't implement closes this issue as not planned. No choice automatically merges a PR.
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Pilot outcome
+      options:
+        - Implement with GPT-6 Luna
+        - Needs human review
+        - Won't implement (close as not planned)
+      default: 1
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Report and desired change
+      description: Describe the evidence, expected behavior, and requested documentation change.
+    validations:
+      required: true
