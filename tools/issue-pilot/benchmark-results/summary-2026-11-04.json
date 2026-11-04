@@ -1,0 +1,402 @@
+{
+  "measured_commit": "d176462806cefcd6420bb7781322c37d37b4b38a",
+  "controlled_run_id": 41915693937,
+  "controlled": {
+    "scope": "live inference, fixture GitHub effects; no Site writes",
+    "model": "gpt-6-luna",
+    "reasoning": "low",
+    "host": "Linux-6.1.158.2-microsoft-standard-x86_64-with-glibc2.39",
+    "fixture_sha256": "47be28e9aab48a19dffdbff529110eec8b0170642036f1017785d9eba2b392ac",
+    "results": [
+      {
+        "backend": "codex",
+        "route": "implement",
+        "status": "needs_human_review",
+        "seconds": 9.359466947000001,
+        "path": [
+          {
+            "phase": "intake",
+            "status": "running"
+          },
+          {
+            "phase": "intake",
+            "status": "running"
+          },
+          {
+            "phase": "group",
+            "status": "running"
+          },
+          {
+            "phase": "rank",
+            "status": "running"
+          },
+          {
+            "phase": "propose",
+            "status": "running"
+          },
+          {
+            "phase": "review",
+            "status": "running"
+          },
+          {
+            "phase": "learn",
+            "status": "running"
+          },
+          {
+            "phase": "review",
+            "status": "needs_human_review"
+          }
+        ],
+        "model_requests": [
+          {
+            "backend": "codex",
+            "model": "gpt-6-luna",
+            "operation": "classify",
+            "seconds": 6.472500659999994,
+            "status": "completed"
+          },
+          {
+            "backend": "codex",
+            "model": "gpt-6-luna",
+            "operation": "fix",
+            "seconds": 2.8803203330000002,
+            "status": "completed"
+          }
+        ],
+        "fixture_effects": [
+          {
+            "kind": "draft_pr",
+            "path": "README.md"
+          }
+        ],
+        "repetition": 1
+      },
+      {
+        "backend": "codex",
+        "route": "review",
+        "status": "needs_human_review",
+        "seconds": 3.0285021070000084,
+        "path": [
+          {
+            "phase": "intake",
+            "status": "running"
+          },
+          {
+            "phase": "review",
+            "status": "running"
+          },
+          {
+            "phase": "review",
+            "status": "running"
+          },
+          {
+            "phase": "review",
+            "status": "needs_human_review"
+          }
+        ],
+        "model_requests": [
+          {
+            "backend": "codex",
+            "model": "gpt-6-luna",
+            "operation": "review",
+            "seconds": 3.0271881650000125,
+            "status": "completed"
+          }
+        ],
+        "fixture_effects": [
+          {
+            "kind": "review",
+            "event": "COMMENT",
+            "commit_id": "head"
+          }
+        ],
+        "repetition": 1
+      },
+      {
+        "backend": "codex",
+        "route": "needs_human_review",
+        "status": "needs_human_review",
+        "seconds": 0.0003925529999975197,
+        "path": [
+          {
+            "phase": "intake",
+            "status": "running"
+          },
+          {
+            "phase": "review",
+            "status": "needs_human_review"
+          }
+        ],
+        "model_requests": [],
+        "fixture_effects": [],
+        "repetition": 1
+      },
+      {
+        "backend": "codex",
+        "route": "wont_implement",
+        "status": "wont_implement",
+        "seconds": 0.00035144599999625825,
+        "path": [
+          {
+            "phase": "intake",
+            "status": "running"
+          },
+          {
+            "phase": "learn",
+            "status": "wont_implement"
+          }
+        ],
+        "model_requests": [],
+        "fixture_effects": [
+          {
+            "kind": "issue",
+            "state": "closed",
+            "state_reason": "not_planned"
+          }
+        ],
+        "repetition": 1
+      },
+      {
+        "backend": "agents_api",
+        "route": "implement",
+        "status": "needs_human_review",
+        "seconds": 17.612658374000006,
+        "path": [
+          {
+            "phase": "intake",
+            "status": "running"
+          },
+          {
+            "phase": "intake",
+            "status": "running"
+          },
+          {
+            "phase": "group",
+            "status": "running"
+          },
+          {
+            "phase": "rank",
+            "status": "running"
+          },
+          {
+            "phase": "propose",
+            "status": "running"
+          },
+          {
+            "phase": "review",
+            "status": "running"
+          },
+          {
+            "phase": "learn",
+            "status": "running"
+          },
+          {
+            "phase": "review",
+            "status": "needs_human_review"
+          }
+        ],
+        "model_requests": [
+          {
+            "backend": "agents_api",
+            "model": "gpt-6-luna",
+            "operation": "classify",
+            "seconds": 7.994864891000006,
+            "status": "completed",
+            "provider": {
+              "backend": "agents_api",
+              "model": "gpt-6-luna",
+              "first_event_seconds": 0.8988970930000022,
+              "first_text_seconds": 3.798476371999996,
+              "usage": null,
+              "status": "completed",
+              "seconds": 6.179454980999992
+            }
+          },
+          {
+            "backend": "agents_api",
+            "model": "gpt-6-luna",
+            "operation": "fix",
+            "seconds": 9.335676116000002,
+            "status": "completed",
+            "provider": {
+              "backend": "agents_api",
+              "model": "gpt-6-luna",
+              "first_event_seconds": 0.5732211939999985,
+              "first_text_seconds": 4.042846261999998,
+              "usage": null,
+              "status": "completed",
+              "seconds": 6.940788478000002
+            }
+          }
+        ],
+        "fixture_effects": [
+          {
+            "kind": "draft_pr",
+            "path": "README.md"
+          }
+        ],
+        "repetition": 1
+      },
+      {
+        "backend": "agents_api",
+        "route": "review",
+        "status": "needs_human_review",
+        "seconds": 7.571317836000006,
+        "path": [
+          {
+            "phase": "intake",
+            "status": "running"
+          },
+          {
+            "phase": "review",
+            "status": "running"
+          },
+          {
+            "phase": "review",
+            "status": "running"
+          },
+          {
+            "phase": "review",
+            "status": "needs_human_review"
+          }
+        ],
+        "model_requests": [
+          {
+            "backend": "agents_api",
+            "model": "gpt-6-luna",
+            "operation": "review",
+            "seconds": 7.57016144699999,
+            "status": "completed",
+            "provider": {
+              "backend": "agents_api",
+              "model": "gpt-6-luna",
+              "first_event_seconds": 0.528336723999999,
+              "first_text_seconds": 3.7489845370000126,
+              "usage": null,
+              "status": "completed",
+              "seconds": 5.716416727000009
+            }
+          }
+        ],
+        "fixture_effects": [
+          {
+            "kind": "review",
+            "event": "COMMENT",
+            "commit_id": "head"
+          }
+        ],
+        "repetition": 1
+      },
+      {
+        "backend": "agents_api",
+        "route": "needs_human_review",
+        "status": "needs_human_review",
+        "seconds": 0.0004137620000079778,
+        "path": [
+          {
+            "phase": "intake",
+            "status": "running"
+          },
+          {
+            "phase": "review",
+            "status": "needs_human_review"
+          }
+        ],
+        "model_requests": [],
+        "fixture_effects": [],
+        "repetition": 1
+      },
+      {
+        "backend": "agents_api",
+        "route": "wont_implement",
+        "status": "wont_implement",
+        "seconds": 0.0003774739999897747,
+        "path": [
+          {
+            "phase": "intake",
+            "status": "running"
+          },
+          {
+            "phase": "learn",
+            "status": "wont_implement"
+          }
+        ],
+        "model_requests": [],
+        "fixture_effects": [
+          {
+            "kind": "issue",
+            "state": "closed",
+            "state_reason": "not_planned"
+          }
+        ],
+        "repetition": 1
+      }
+    ]
+  },
+  "live_reviews": [
+    {
+      "backend": "codex",
+      "run_id": 41916961472,
+      "issue": 8,
+      "job_seconds": 101,
+      "worker_step_seconds": 17,
+      "request": {
+        "backend": "codex",
+        "model": "gpt-6-luna",
+        "operation": "review",
+        "seconds": 10.476900654000005,
+        "status": "completed"
+      },
+      "outcome": {
+        "outcome": "needs_human_review",
+        "issue_url": "https://github.com/dahrk/openai-cookbook-fork/issues/8",
+        "detail": "Issue #8 remains open and needs human review; worker stopped. PR #5 agent review published at ff09219d74b4; 0 findings",
+        "model": "gpt-6-luna",
+        "run_id": "gh-41916961472-1"
+      },
+      "review": {
+        "pr_number": 5,
+        "head_sha": "ff09219d74b453005fc5dbc0f53d7461b9204050",
+        "review_url": "https://github.com/dahrk/openai-cookbook-fork/pull/5#pullrequestreview-5776150744",
+        "recovered": false
+      }
+    },
+    {
+      "backend": "agents_api",
+      "run_id": 41916297645,
+      "issue": 7,
+      "job_seconds": 43,
+      "worker_step_seconds": 14,
+      "request": {
+        "backend": "agents_api",
+        "model": "gpt-6-luna",
+        "operation": "review",
+        "seconds": 8.28008226999998,
+        "status": "completed",
+        "provider": {
+          "backend": "agents_api",
+          "model": "gpt-6-luna",
+          "first_event_seconds": 0.48111980499999163,
+          "first_text_seconds": 4.146264295000009,
+          "usage": null,
+          "status": "completed",
+          "seconds": 5.947764761000002
+        }
+      },
+      "outcome": {
+        "outcome": "needs_human_review",
+        "issue_url": "https://github.com/dahrk/openai-cookbook-fork/issues/7",
+        "detail": "Issue #7 remains open and needs human review; worker stopped. PR #5 agent review published at ff09219d74b4; 0 findings",
+        "model": "gpt-6-luna",
+        "run_id": "gh-41916297645-1"
+      },
+      "review": {
+        "pr_number": 5,
+        "head_sha": "ff09219d74b453005fc5dbc0f53d7461b9204050",
+        "review_url": "https://github.com/dahrk/openai-cookbook-fork/pull/5#pullrequestreview-5776082125",
+        "recovered": false
+      }
+    }
+  ],
+  "caveat": "One sample per case; fixture effect times exclude GitHub network calls; real job times include unequal cold setup."
+}

@@ -20,12 +20,12 @@ class AgentsAPIBrain(CodexBrain):
             raise RuntimeError('OPENAI_API_KEY is required for the Agents API backend')
         self.last_request = None
 
-    def _request(self, path, data=None, method=None):
+    def _request(self, path, data=None, method=None, timeout=180):
         return urlopen(Request('https://api.openai.com/v1/agents/' + path,
             data=None if data is None else json.dumps(data).encode(),
             headers={'Authorization': 'Bearer ' + self.key,
                      'OpenAI-Beta': 'agents=v1', 'Content-Type': 'application/json'},
-            method=method), timeout=180)
+            method=method), timeout=timeout)
 
     def _run(self, instruction, evidence, schema):
         started = time.perf_counter()
@@ -102,8 +102,15 @@ class AgentsAPIBrain(CodexBrain):
             # environment:none creates no sandbox. Delete the temporary session;
             # all useful output and timings have already been collected locally.
             if session_id:
+                if not completed:
+                    try:
+                        with self._request('sessions/' + session_id + '/events',
+                                {'events': [{'type': 'agent.session.input.cancel'}]}, timeout=10):
+                            timing['cancel_requested'] = True
+                    except Exception:
+                        timing['cancel_request_failed'] = True
                 try:
-                    with self._request('sessions/' + session_id, method='DELETE'):
+                    with self._request('sessions/' + session_id, method='DELETE', timeout=10):
                         pass
                 except Exception:
                     timing['cleanup_failed'] = True

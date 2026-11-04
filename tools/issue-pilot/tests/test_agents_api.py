@@ -61,6 +61,21 @@ class AgentsAPITests(unittest.TestCase):
             self.assertNotIn('secret', row)
             self.assertEqual(json.loads(row)['operation'], 'classify')
 
+    def test_incomplete_root_turn_requests_cancellation_before_cleanup(self):
+        requests = []
+        def invoke(request, **kwargs):
+            requests.append(request)
+            return (stream([{'type': 'agent.session.created', 'session': {'id': 'sess_test'}},
+                            {'type': 'agent.session.idle'}]) if len(requests) == 1 else io.BytesIO(b'{}'))
+        with patch.dict(os.environ, {'OPENAI_API_KEY': 'key'}), \
+                patch('agents_api_brain.urlopen', side_effect=invoke):
+            brain = AgentsAPIBrain()
+            with self.assertRaises(RuntimeError):
+                brain.classify({'number': 1}, {})
+        self.assertEqual(json.loads(requests[1].data)['events'], [{'type': 'agent.session.input.cancel'}])
+        self.assertEqual(requests[2].get_method(), 'DELETE')
+        self.assertTrue(brain.last_request['cancel_requested'])
+
     def test_issue_runtime_is_allowlisted_and_defaults_to_cli(self):
         self.assertEqual(issue_backend({}), 'codex')
         self.assertEqual(issue_backend({'body': '### Execution backend\n\nAgents API (managed Codex)'}), 'agents_api')
