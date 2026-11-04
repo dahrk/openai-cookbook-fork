@@ -1,0 +1,16 @@
+{
+  "repo": "dahrk/openai-cookbook-fork",
+  "source_repo": "dahrk/openai-cookbook-fork",
+  "groups": {
+    "7dc155e263ff": {
+      "summary": "README contains an empty <h3> heading that should be removed; no existing groups to match.",
+      "reports": {
+        "4": "[Issue Pilot canary] Remove empty heading from README"
+      },
+      "pr": null,
+      "evidence": {
+        "4": "### Pilot outcome\n\nImplement with GPT-6 Luna\n\n### Report and desired change\n\nCanary for the issue-triggered worker and live dashboard. The current root README.md contains an empty `<h3></h3>` element immediately after the two Cookbook logo links and before the navigation quote. This heading has no content and adds an unnecessary heading to the document outline.\n\nPlease make the smallest README-only correction: remove that empty heading and any whitespace line made redundant by its removal. Preserve all existing links and substantive text. Open at most one draft PR and stop for human review. Do not merge or change other files.\n\nExpected canary result: real GPT-6 Luna execution on the existing small runner, a bounded draft documentation PR if actionable, and a terminal needs-human-review record with the traveled path on the Site."
+      }
+    }
+  }
+}
