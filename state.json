@@ -1,0 +1,16 @@
+{
+  "repo": "dahrk/openai-cookbook-fork",
+  "source_repo": "dahrk/openai-cookbook-fork",
+  "groups": {
+    "740a35d7c663": {
+      "summary": "Request to support notebook implementation beyond the README-only allowlist, including Python changes and a separate validation policy.",
+      "reports": {
+        "1": "[Issue Pilot] Investigate support for notebook implementation beyond the README allowlist"
+      },
+      "pr": null,
+      "evidence": {
+        "1": "### Pilot outcome\n\nImplement with GPT-6 Luna\n\n### Report and desired change\n\nThis fork's Issue Pilot currently limits generated fixes to README.md through tools/issue-pilot/config.json and bounded_proposal in tools/issue-pilot/pilot.py. I would like to explore support for implementing notebook changes, which requires Python code changes and a separate validation policy. The current documentation-only worker should investigate the request and stop for human review when it cannot implement within its existing allowlist. Do not claim that a README edit adds notebook editing support.\n\nThis issue is also the first live GPT-6 Luna / GitHub Actions / private Site integration check. No automatic merge is requested."
+      }
+    }
+  }
+}
