@@ -46,6 +46,30 @@ def issue_outcome(issue):
     return OUTCOMES[value]
 
 
+def issue_backend(issue):
+    match = re.search(r'^### Execution backend\s*\n+([^\n]+)', issue.get('body') or '', re.M)
+    value = match.group(1).strip() if match else 'Codex CLI (GitHub Actions)'
+    choices = {'Codex CLI (GitHub Actions)': 'codex', 'Agents API (managed Codex)': 'agents_api'}
+    if value not in choices:
+        raise ValueError('Unrecognized execution backend')
+    return choices[value]
+
+
+def make_brain(output):
+    backend = os.getenv('PILOT_BACKEND', 'codex')
+    if backend == 'codex':
+        brain = CodexBrain()
+    elif backend == 'agents_api':
+        from agents_api_brain import AgentsAPIBrain
+        brain = AgentsAPIBrain()
+    elif backend == 'agents':
+        brain = AgentBrain()
+    else:
+        raise ValueError('PILOT_BACKEND must be codex, agents_api or agents')
+    from request_metrics import MeasuredBrain
+    return MeasuredBrain(brain, backend, output)
+
+
 def terminal_outcome(args, outcome, context=''):
     """Park for a person, or close only the selected owner-authored issue."""
     api = GitHub(args.repo or TARGET_REPO)
@@ -118,7 +142,7 @@ def review_pull_request(args, api, issue):
         return base64.b64decode(file['content']).decode('utf-8')
     evidence = {'pr_number': number, 'head_sha': head, 'focus': focus, 'path': 'README.md',
                 'patch': patch, 'base_content': content(pr['base']['sha']), 'head_content': content(head)}
-    result = CodexBrain().review(evidence)
+    result = make_brain(args.output).review(evidence)
     if (set(result) != {'summary', 'findings', 'limitations'} or not isinstance(result['summary'], str)
             or not result['summary'].strip() or not isinstance(result['limitations'], str)
             or not isinstance(result['findings'], list) or len(result['findings']) > 8):
@@ -426,8 +450,8 @@ def live(args):
     if repo.lower() == 'openai/openai-cookbook':
         raise ValueError('Live mode requires your own fork; upstream writes are disabled')
     backend = os.getenv('PILOT_BACKEND', 'codex')
-    if backend not in ('codex', 'agents'):
-        raise ValueError('PILOT_BACKEND must be codex or agents')
+    if backend not in ('codex', 'agents_api', 'agents'):
+        raise ValueError('PILOT_BACKEND must be codex, agents_api or agents')
     model = selected_model()
     api = GitHub(repo)
     issue_number = getattr(args, 'issue_number', 0)
@@ -436,7 +460,7 @@ def live(args):
         if os.getenv('GITHUB_ACTIONS') == 'true' and os.getenv('GITHUB_ACTOR') != ALLOWED_AUTHOR:
             raise ValueError('Only @dahrk may dispatch Issue Pilot')
         selected = authorized_issue(api, issue_number)
-        args.telemetry.boundary('intake', f'Authorized @{ALLOWED_AUTHOR} issue #{issue_number}; {model}')
+        args.telemetry.boundary('intake', f'Authorized @{ALLOWED_AUTHOR} issue #{issue_number}; {backend} / {model}')
         if os.getenv('PILOT_REQUIRE_TELEMETRY') == '1':
             args.telemetry.require_delivery()
         outcome = args.disposition if args.disposition != 'from_issue' else issue_outcome(selected)
@@ -447,7 +471,7 @@ def live(args):
             terminal_outcome(args, outcome)
             return
         config['min_reports'] = 1
-    brain = CodexBrain() if backend == 'codex' else AgentBrain()
+    brain = make_brain(args.output)
     source_repo = args.source_repo or repo
     config['source_repo'] = source_repo
     state_path = Path(args.state)

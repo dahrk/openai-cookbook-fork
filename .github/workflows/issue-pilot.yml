@@ -14,6 +14,11 @@ on:
         type: choice
         options: [from_issue, implement, review, needs_human_review, wont_implement]
         default: from_issue
+      backend:
+        description: Runtime override (or read the issue form)
+        type: choice
+        options: [from_issue, codex, agents_api]
+        default: from_issue
 permissions:
   contents: read
 concurrency:
@@ -55,30 +60,37 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET_REPO: ${{ github.repository }}
+          BACKEND: ${{ inputs.backend || 'from_issue' }}
           DISPOSITION: ${{ inputs.disposition || 'from_issue' }}
           ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
         run: |
           python - <<'PYTHON'
           import os
-          from pilot import GitHub, authorized_issue, issue_outcome, review_request
+          from pilot import GitHub, authorized_issue, issue_outcome, issue_backend, review_request
           issue = authorized_issue(GitHub(os.environ['TARGET_REPO']), int(os.environ['ISSUE_NUMBER']))
           outcome = os.environ['DISPOSITION']
           if outcome == 'from_issue':
               outcome = issue_outcome(issue)
           if outcome == 'review':
               review_request(issue)
+          backend = os.environ['BACKEND']
+          if backend == 'from_issue':
+              backend = issue_backend(issue)
+          if backend not in ('codex', 'agents_api'):
+              raise ValueError('Unrecognized runtime')
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('outcome=' + outcome + '\n')
+              output.write('backend=' + backend + '\n')
           print('Authorized issue #' + str(issue['number']) + ' by @dahrk; outcome ' + outcome)
           PYTHON
       - name: Install socket transport
         run: pip install -r requirements-telemetry.txt
       - uses: actions/setup-node@v4
-        if: steps.authorize.outputs.outcome == 'implement' || steps.authorize.outputs.outcome == 'review'
+        if: (steps.authorize.outputs.outcome == 'implement' || steps.authorize.outputs.outcome == 'review') && steps.authorize.outputs.backend == 'codex'
         with:
           node-version: '22'
       - name: Install pinned Codex CLI
-        if: steps.authorize.outputs.outcome == 'implement' || steps.authorize.outputs.outcome == 'review'
+        if: (steps.authorize.outputs.outcome == 'implement' || steps.authorize.outputs.outcome == 'review') && steps.authorize.outputs.backend == 'codex'
         run: npm install -g @openai/codex@0.166.0 --ignore-scripts
       - name: Verify worker policies
         run: python -m unittest discover -s tests -v
@@ -103,8 +115,9 @@ jobs:
             result=$?
             if [ "$result" -ne 2 ]; then exit "$result"; fi
           fi
-      - name: Run intake and fixes with GPT-6 Luna only
+      - name: Run selected runtime with GPT-6 Luna
         env:
+          PILOT_BACKEND: ${{ steps.authorize.outputs.backend }}
           GH_TOKEN: ${{ github.token }}
           OPENAI_API_KEY: ${{ (steps.authorize.outputs.outcome == 'implement' || steps.authorize.outputs.outcome == 'review') && secrets.OPENAI_API_KEY || '' }}
           PILOT_SITE_BEARER: ${{ secrets.PILOT_SITE_BEARER }}

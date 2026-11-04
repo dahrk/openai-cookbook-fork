@@ -55,7 +55,7 @@ Configure these fork secrets through GitHub's secure UI or authenticated CLI:
 - `OPENAI_API_KEY`: required only for the implementation route.
 - `PILOT_SITE_BEARER`: service credential for the published owner-private Site, required when connecting telemetry.
 
-The workflow pins `PILOT_BACKEND=codex` and `OPENAI_MODEL=gpt-6-luna`; another model is rejected without fallback. Codex CLI is pinned to `0.166.0`. The Site origin is the existing published private Site, and the target is `github.repository`. The workflow uses its own `GITHUB_TOKEN` with contents/issues/pull-request write permissions; no separate GitHub token secret is needed. GitHub repository policy must allow Actions to create pull requests. Credentials are scoped to the steps that need them. The Codex child process receives only its API credential, runs from an isolated temporary directory, and has shell, browser, plugin, and subagent tools disabled. Python retains responsibility for allowlisted draft-PR writes.
+The default runtime is Codex CLI on GitHub Actions: **easily accessible compute** already available beside the issues and PRs. The owner can choose **Agents API (managed Codex)** in the issue form or override `backend` on manual dispatch. Agents API runs the Codex harness and orchestration at OpenAI; Actions still validates issues, dispatches requests, applies bounded GitHub effects and sends Site telemetry. The adapter uses `environment: none`, no tools and no subagents, avoiding an extra sandbox for this text-only demo. Both paths pin `OPENAI_MODEL=gpt-6-luna` and low reasoning; another model is rejected without fallback. Codex CLI is pinned to `0.166.0`. The Site origin is the existing published private Site, and the target is `github.repository`. The workflow uses its own `GITHUB_TOKEN` with contents/issues/pull-request write permissions; no separate GitHub token secret is needed. GitHub repository policy must allow Actions to create pull requests. Credentials are scoped to the steps that need them. The Codex child process receives only its API credential, runs from an isolated temporary directory, and has shell, browser, plugin, and subagent tools disabled. Python retains responsibility for allowlisted draft-PR writes.
 
 No repository variables are required. The runner ID is `gh-<run_id>-<attempt>`, matching the Site's run list. Required telemetry fails the workflow if the Site does not acknowledge the initial or terminal events. The user approved configuring both encrypted Actions secrets. Do not store credential values in source or artifacts. There is no separate GitHub token secret: the workflow uses its scoped `GITHUB_TOKEN`.
 
@@ -84,6 +84,8 @@ Serialize live local runs yourself; do not run a local writer alongside the work
 
 - `pilot.py`: GitHub adapter, grouping, reconciliation, fix policy, reminders, report and replay.
 - `codex_brain.py`: Luna-only Codex CLI backend and strict structured-output schemas.
+- `agents_api_brain.py`: the managed Agents API backend, selected with `PILOT_BACKEND=agents_api`.
+- `benchmark.py`: matched live-inference path comparison with isolated GitHub effects; see [benchmark methodology](docs/BENCHMARK.md).
 - `PILOT_BACKEND=agents`: optional legacy Agents SDK backend, also restricted to GPT-6 Luna; install `requirements.txt` only for that backend.
 - `config.json`: target, owner map, minimum report count, SLA, fix allowlist.
 - `seed_demo.py`: idempotent synthetic report seeding on a fork.
@@ -94,3 +96,13 @@ Serialize live local runs yourself; do not run a local writer alongside the work
 The replay and tests require no API keys. Live semantic quality, model access, GitHub permissions and hosted scheduling require an authenticated integration run. Demo reports use explicit scenario labels; they do not measure the live classifier's accuracy. Issue descriptions are untrusted model input and truncated to 12,000 characters; the fix agent has no tools or secrets in its input. The repository checkout is read as data and no repository-provided code is executed.
 
 The demo uses `ubuntu-slim` (one CPU, 5 GB RAM), a ten-minute timeout, a sparse checkout of the worker, and three-day artifact retention. Human-review and won't-implement routes skip Node/Codex installation and do not receive the API key.
+
+## Focused agent review
+
+Use the Issue Pilot form outcome **Review a pull request with GPT-6 Luna**, with a **Pull request number** and **Review focus**. Manual dispatch also accepts `review`, using those fields from the issue. Only `@dahrk` can trigger it. The route reads one README-only PR within the fork, gives the exact base/head content and patch to Luna, and publishes advisory findings as a COMMENT review at that head. It refuses a changed head and then stops for human feedback. It never approves, merges, runs repository code or edits the patch. Retries reuse the bot review for that issue and head. Both review and implementation require the encrypted API secret; direct human review and won’t implement do not.
+
+## Runtime comparison
+
+Codex CLI, Agents SDK and Agents API are different integrations. The live default uses the CLI, not the Agents SDK. The optional SDK adapter remains for local implementation experiments; it is not what the deployed workflow executes. The Agents API variant calls `/v1/agents/sessions` over HTTPS and collects the completed root-turn result. It does not dispatch a Codex Cloud UI task.
+
+Request timings are stored in `artifacts/request-metrics.jsonl` without prompts, outputs or credentials. Use **Actions → Issue Pilot runtime benchmark → Run workflow** for one serial comparison of implementation, focused review and both escape hatches. The benchmark uses real Luna inference and the actual `pilot.live` orchestration with fixture GitHub writes and no Site connection; it does not create benchmark PRs or close real issues. Live integration runs are reported separately.

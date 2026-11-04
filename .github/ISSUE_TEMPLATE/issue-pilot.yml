@@ -38,3 +38,14 @@ body:
     attributes:
       label: Review focus
       description: Required checks for the review agent (at most 1200 characters).
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Execution backend
+      description: Codex CLI uses GitHub Actions compute. Agents API uses the managed Codex harness; Actions still dispatches and applies the result.
+      options:
+        - Codex CLI (GitHub Actions)
+        - Agents API (managed Codex)
+      default: 0
+    validations:
+      required: true

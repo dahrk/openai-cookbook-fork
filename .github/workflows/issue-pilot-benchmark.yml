@@ -1,0 +1,45 @@
+name: Issue Pilot runtime benchmark
+run-name: "Issue Pilot · CLI vs Agents API · Luna"
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: issue-pilot-runtime-benchmark
+  cancel-in-progress: false
+jobs:
+  compare-runtimes:
+    if: github.repository == 'dahrk/openai-cookbook-fork' && github.actor == 'dahrk'
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: tools/issue-pilot
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: tools/issue-pilot
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install the same pinned CLI as the live worker
+        run: npm install -g @openai/codex@0.166.0 --ignore-scripts
+      - name: Verify policies
+        run: python -m unittest discover -s tests -q
+      - name: Compare live inference and isolated end-to-end paths
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: gpt-6-luna
+          PILOT_SITE_URL: ''
+          PILOT_REQUIRE_TELEMETRY: '0'
+        run: python benchmark.py --backend both --repetitions 1 --output artifacts/benchmark
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: issue-pilot-runtime-benchmark
+          retention-days: 3
+          path: tools/issue-pilot/artifacts/benchmark/
