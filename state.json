@@ -1,0 +1,16 @@
+{
+  "repo": "dahrk/openai-cookbook-fork",
+  "source_repo": "dahrk/openai-cookbook-fork",
+  "groups": {
+    "a7aa3a64d1d8": {
+      "summary": "No existing groups were provided. This issue requests an advisory review of PR #5 focused on whether only the empty h3 heading and adjacent blank line were removed from the README.",
+      "reports": {
+        "10": "[Issue Pilot] Focused review of PR #5"
+      },
+      "pr": null,
+      "evidence": {
+        "10": "### Pilot outcome\n\nImplement with GPT-6 Luna\n\n### Report and desired change\n\nReview PR #5 against the criteria below. Publish advisory findings and return for human feedback.\n\n### Pull request number\n\n5\n\n### Review focus\n\nCheck that only the empty <h3></h3> heading and its adjacent blank line were removed. Confirm every existing link and all other README content remain unchanged.\n\n### Execution backend\n\nAgents API (managed Codex)"
+      }
+    }
+  }
+}
